@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel to Chart Generator</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- SheetJS library for Excel parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Chart.js for visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Excel to Chart Generator</h1>
+            <p>Upload your Excel file, select columns, and create beautiful charts</p>
+        </header>
+
+        <div class="generator-section">
+            <!-- File Upload Section -->
+            <div class="upload-section">
+                <h2>1. Upload Excel File</h2>
+                <div class="file-upload-container">
+                    <label for="excelFile" class="file-upload-label">
+                        <div class="upload-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                                <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+                            </svg>
+                        </div>
+                        <span id="file-name">Choose Excel file or drop it here</span>
+                    </label>
+                    <input type="file" id="excelFile" accept=".xlsx, .xls" hidden>
+                </div>
+                <div id="loading-indicator" class="loading-indicator hidden">
+                    <div class="spinner"></div>
+                    <span>Processing Excel file...</span>
+                </div>
+            </div>
+
+            <!-- Data Selection Section (appears after upload) -->
+            <div id="data-selection" class="data-selection hidden">
+                <h2>2. Select Data to Visualize</h2>
+                
+                <div class="sheet-selector">
+                    <label for="sheetSelect">Select Sheet:</label>
+                    <select id="sheetSelect"></select>
+                </div>
+                
+                <div class="columns-selection">
+                    <div class="column-section">
+                        <h3>X-Axis (Categories/Labels)</h3>
+                        <select id="xAxisSelect" class="axis-select"></select>
+                        <div class="preview">
+                            <h4>Preview:</h4>
+                            <div id="xAxisPreview" class="preview-box"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="column-section">
+                        <h3>Y-Axis (Values)</h3>
+                        <div id="yAxisSelectors">
+                            <div class="y-axis-item">
+                                <select class="y-axis-select"></select>
+                                <input type="color" class="series-color" value="#4e73df">
+                                <button class="remove-y-axis" title="Remove series">✕</button>
+                            </div>
+                        </div>
+                        <button id="addSeries" class="secondary-btn small">+ Add Another Series</button>
+                        <div class="preview">
+                            <h4>Preview:</h4>
+                            <div id="yAxisPreview" class="preview-box"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="data-range">
+                    <h3>Data Range</h3>
+                    <div class="range-controls">
+                        <div class="range-group">
+                            <label for="startRow">Start Row:</label>
+                            <input type="number" id="startRow" min="2" value="2">
+                        </div>
+                        <div class="range-group">
+                            <label for="endRow">End Row:</label>
+                            <input type="number" id="endRow" min="2" value="306">
+                        </div>
+                        <button id="applyRange" class="secondary-btn">Apply Range</button>
+                    </div>
+                </div>
+
+                <div class="data-filter">
+                    <h3>Data Filter</h3>
+                    <div class="filter-controls">
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label for="filterColumn">Filter by Column:</label>
+                                <select id="filterColumn">
+                                    <option value="">No Filter</option>
+                                    <!-- Options will be populated from columns -->
+                                </select>
+                            </div>
+                            
+                            <div class="filter-group">
+                                <label for="filterValue">Filter Value:</label>
+                                <select id="filterValue" disabled>
+                                    <option value="">Select column first</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chart Type Selection (appears after data selection) -->
+            <div id="chart-type-selection" class="chart-type-selection hidden">
+                <h2>3. Select Chart Type</h2>
+                <div class="chart-types-grid">
+                    <div class="chart-type-card" data-type="bar">
+                        <div class="chart-icon">
+                            <svg viewBox="0 0 24 24"><rect x="3" y="10" width="4" height="10"></rect><rect x="10" y="4" width="4" height="16"></rect><rect x="17" y="7" width="4" height="13"></rect></svg>
+                        </div>
+                        <span>Bar Chart</span>
+                    </div>
+                    <div class="chart-type-card" data-type="stackedBar">
+                        <div class="chart-icon">
+                            <svg viewBox="0 0 24 24">
+                                <rect x="3" y="14" width="4" height="6"></rect>
+                                <rect x="3" y="8" width="4" height="6" opacity="0.7"></rect>
+                                <rect x="10" y="12" width="4" height="8"></rect>
+                                <rect x="10" y="4" width="4" height="8" opacity="0.7"></rect>
+                                <rect x="17" y="10" width="4" height="10"></rect>
+                                <rect x="17" y="5" width="4" height="5" opacity="0.7"></rect>
+                            </svg>
+                        </div>
+                        <span>Stacked Bar</span>
+                    </div>
+                    
+                    <div class="chart-type-card" data-type="percentStackedBar">
+                        <div class="chart-icon">
+                            <svg viewBox="0 0 24 24">
+                                <rect x="3" y="14" width="4" height="6"></rect>
+                                <rect x="3" y="8" width="4" height="6" opacity="0.7"></rect>
+                                <rect x="3" y="3" width="4" height="5" opacity="0.5"></rect>
+                                <rect x="10" y="12" width="4" height="8"></rect>
+                                <rect x="10" y="3" width="4" height="9" opacity="0.7"></rect>
+                                <rect x="17" y="10" width="4" height="10"></rect>
+                                <rect x="17" y="3" width="4" height="7" opacity="0.7"></rect>
+                                <text x="19" y="14" font-size="5" text-anchor="middle">%</text>
+                            </svg>
+                        </div>
+                        <span>Percent Stacked</span>
+                    </div>
+                    <div class="chart-type-card" data-type="line">
+                        <div class="chart-icon">
+                            <svg viewBox="0 0 24 24"><path d="M3,14L7,8L11,12L15,5L21,14"></path></svg>
+                        </div>
+                        <span>Line Chart</span>
+                    </div>
+                    <div class="chart-type-card" data-type="pie">
+                        <div class="chart-icon">
+                            <svg viewBox="0 0 24 24"><path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,10.5A1.5,1.5 0 0,0 10.5,12A1.5,1.5 0 0,0 12,13.5A1.5,1.5 0 0,0 13.5,12A1.5,1.5 0 0,0 12,10.5Z"></path></svg>
+                        </div>
+                        <span>Pie Chart</span>
+                    </div>
+                    <div class="chart-type-card" data-type="doughnut">
+                        <div class="chart-icon">
+                            <svg viewBox="0 0 24 24"><path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6Z"></path></svg>
+                        </div>
+                        <span>Doughnut</span>
+                    </div>
+                    <div class="chart-type-card" data-type="scatter">
+                        <div class="chart-icon">
+                            <svg viewBox="0 0 24 24"><path d="M5,12L3,10H8V15L10,13H5V12M5,4V5H13V11H14V5H19V4H5M5,19H19V18H5V19M17,11V9H14V7H17V5L19,7L17,9M8,7V9H11V11H8V13L6,11L8,9"></path></svg>
+                        </div>
+                        <span>Scatter</span>
+                    </div>
+                    <div class="chart-type-card" data-type="radar">
+                        <div class="chart-icon">
+                            <svg viewBox="0 0 24 24"><path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,15C10.34,15 9,13.66 9,12C9,10.34 10.34,9 12,9C13.66,9 15,10.34 15,12C15,13.66 13.66,15 12,15M12,4A8,8 0 0,1 20,12L15,12A3,3 0 0,0 12,9V4Z"></path></svg>
+                        </div>
+                        <span>Radar</span>
+                    </div>
+                    <div class="chart-type-card" data-type="polarArea">
+                        <div class="chart-icon">
+                            <svg viewBox="0 0 24 24"><path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,10.5A1.5,1.5 0 0,0 10.5,12A1.5,1.5 0 0,0 12,13.5A1.5,1.5 0 0,0 13.5,12A1.5,1.5 0 0,0 12,10.5Z"></path></svg>
+                        </div>
+                        <span>Polar Area</span>
+                    </div>
+                    <div class="chart-type-card" data-type="bubble">
+                        <div class="chart-icon">
+                            <svg viewBox="0 0 24 24"><circle cx="8" cy="16" r="4"></circle><circle cx="16" cy="8" r="6"></circle></svg>
+                        </div>
+                        <span>Bubble</span>
+                    </div>
+                </div>
+                <div class="chart-options">
+                    <button id="generateChartBtn" class="action-btn">Generate Chart</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chart Display Area -->
+        <div id="chart-display" class="chart-display hidden">
+            <h2>Your Generated Chart</h2>
+            <div class="chart-container">
+                <canvas id="chartCanvas"></canvas>
+            </div>
+
+            <!-- Chart Title and Axis Labels -->
+            <div class="chart-customization">
+                <div class="chart-title-section">
+                    <label for="chartTitle">Chart Title:</label>
+                    <input type="text" id="chartTitle" placeholder="Enter chart title">
+                    <button id="applyChartTitle" class="secondary-btn small">Apply</button>
+                </div>
+                <div class="axis-labels-section">
+                    <div class="axis-label-group">
+                        <label for="xAxisLabel">X-Axis Label:</label>
+                        <input type="text" id="xAxisLabel" placeholder="X-Axis">
+                    </div>
+                    <div class="axis-label-group">
+                        <label for="yAxisLabel">Y-Axis Label:</label>
+                        <input type="text" id="yAxisLabel" placeholder="Y-Axis">
+                    </div>
+                    <button id="applyAxisLabels" class="secondary-btn small">Apply</button>
+                </div>
+            </div>
+
+            <!-- Export Options -->
+            <div class="export-options">
+                <button id="downloadImageBtn" class="secondary-btn">Download as Image</button>
+                <button id="downloadCodeBtn" class="secondary-btn highlight">Download Chart Code</button>
+                <button id="copyDataBtn" class="secondary-btn">Copy Chart Data</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="scripts.js"></script>
+</body>
+</html>
