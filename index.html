@@ -79,14 +79,15 @@
                     <div class="range-controls">
                         <div class="range-group">
                             <label for="startRow">Start Row:</label>
-                            <input type="number" id="startRow" min="2" value="2">
+                            <input type="number" id="startRow" min="2" value="2" required>
                         </div>
                         <div class="range-group">
                             <label for="endRow">End Row:</label>
-                            <input type="number" id="endRow" min="2" value="306">
+                            <input type="number" id="endRow" min="2" value="306" required>
                         </div>
                         <button id="applyRange" class="secondary-btn">Apply Range</button>
                     </div>
+                    <p class="range-hint">Note: For large datasets, start with a smaller range (e.g., 100 rows) for better performance.</p>
                 </div>
 
                 <div class="data-filter">
@@ -105,6 +106,16 @@
                                 <label for="filterValue">Filter Value:</label>
                                 <select id="filterValue" disabled>
                                     <option value="">Select column first</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label for="filterColumn2">Chart Filter Column:</label>
+                                <select id="filterColumn2">
+                                    <option value="">No Chart Filter</option>
+                                    <!-- Options will be populated from columns -->
                                 </select>
                             </div>
                         </div>
@@ -203,6 +214,18 @@
         <!-- Chart Display Area -->
         <div id="chart-display" class="chart-display hidden">
             <h2>Your Generated Chart</h2>
+            
+            <!-- Add chart filter dropdown -->
+            <div class="chart-filter-controls">
+                <div class="chart-filter-group">
+                    <label id="chartFilterLabel">Filter Chart:</label>
+                    <select id="chartFilterValue">
+                        <option value="">All Values</option>
+                        <!-- Options will be populated based on the third filter column -->
+                    </select>
+                </div>
+            </div>
+            
             <div class="chart-container">
                 <canvas id="chartCanvas"></canvas>
             </div>

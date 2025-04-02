@@ -76,6 +76,20 @@ function setupEventListeners() {
     // Add event listeners for filter controls
     document.getElementById('filterColumn').addEventListener('change', populateFilterValues);
     document.getElementById('filterValue').addEventListener('change', updateDataPreview);
+    
+    // Add event listener for chart filter column
+    document.getElementById('filterColumn2').addEventListener('change', function() {
+        // Store selected value for later use when generating chart
+        updateDataPreview();
+    });
+    
+    // Add event listener for chart filter value dropdown
+    document.getElementById('chartFilterValue').addEventListener('change', function() {
+        if (chartInstance) {
+            // Update chart with new filter value without resetting
+            updateChartWithFilter();
+        }
+    });
 }
 
 // Handle Excel file upload
@@ -191,11 +205,13 @@ function populateColumnSelectors() {
     const xAxisSelect = document.getElementById('xAxisSelect');
     const yAxisSelects = document.querySelectorAll('.y-axis-select');
     const filterColumn = document.getElementById('filterColumn');
+    const filterColumn2 = document.getElementById('filterColumn2');
     
     // Clear existing options
     xAxisSelect.innerHTML = '';
     yAxisSelects.forEach(select => select.innerHTML = '');
     filterColumn.innerHTML = '<option value="">No Filter</option>'; // Reset with default option
+    filterColumn2.innerHTML = '<option value="">No Chart Filter</option>'; // Reset with default option
     
     // Add options for each column
     columns.forEach(column => {
@@ -205,6 +221,7 @@ function populateColumnSelectors() {
         
         xAxisSelect.appendChild(option.cloneNode(true));
         filterColumn.appendChild(option.cloneNode(true)); // Add to filter dropdown
+        filterColumn2.appendChild(option.cloneNode(true)); // Add to second filter dropdown
         
         yAxisSelects.forEach(select => {
             select.appendChild(option.cloneNode(true));
@@ -350,9 +367,50 @@ function getColorFromPalette(index) {
     return colorPalette[index % colorPalette.length];
 }
 
+// Helper function to safely compare values of any type
+function valueMatches(cellValue, filterValue) {
+    // Handle nulls and undefined
+    if (cellValue === null || cellValue === undefined) {
+        return filterValue === "null" || filterValue === "undefined" || filterValue === "";
+    }
+    
+    // Convert to strings and compare (case-insensitive)
+    const cellStr = String(cellValue).trim().toLowerCase();
+    const filterStr = String(filterValue).trim().toLowerCase();
+    
+    return cellStr === filterStr;
+}
+
+// Improved validation for data range inputs
+function validateDataRange() {
+    const startRow = parseInt(document.getElementById('startRow').value);
+    const endRow = parseInt(document.getElementById('endRow').value);
+    
+    if (!currentSheet || !currentSheet.data) {
+        return false;
+    }
+    
+    // Validate range boundaries
+    if (isNaN(startRow) || isNaN(endRow) || 
+        startRow < 2 || // Header row is 1
+        startRow > currentSheet.data.length || 
+        endRow < startRow || 
+        endRow > currentSheet.data.length) {
+        
+        alert('Invalid data range. Please check your start and end row values.');
+        return false;
+    }
+    
+    return true;
+}
+
 // Update data preview based on selected columns and range
 function updateDataPreview() {
     if (!currentSheet || !currentSheet.data || currentSheet.data.length === 0) {
+        return;
+    }
+    
+    if (!validateDataRange()) {
         return;
     }
     
@@ -372,20 +430,13 @@ function updateDataPreview() {
     const filterColumnIndex = useFilter ? parseInt(filterColumnSelect.value) : -1;
     const filterValue = filterValueSelect.value;
     
-    // Validate range
-    if (startRow < 2 || startRow > currentSheet.data.length || 
-        endRow < startRow || endRow > currentSheet.data.length) {
-        alert('Invalid data range. Please check your start and end row values.');
-        return;
-    }
-    
-    // Function to check if a row matches the filter
+    // Function to check if a row matches the filter with improved type handling
     function rowMatchesFilter(row) {
         if (!useFilter || filterValue === '') {
             return true; // No filter applied
         }
         
-        return row[filterColumnIndex] == filterValue; // Use loose equality for number/string comparison
+        return valueMatches(row[filterColumnIndex], filterValue);
     }
     
     // Get selected columns
@@ -400,8 +451,15 @@ function updateDataPreview() {
     let totalRows = 0;
     let filteredRows = 0;
     
+    // Optimize for large datasets by chunking the processing
+    const chunkSize = 1000; // Process 1000 rows at a time
+    
     for (let i = startRow - 1; i < endRow && i < currentSheet.data.length; i++) {
         const row = currentSheet.data[i];
+        
+        // Skip processing every few rows if we're dealing with a very large dataset
+        if (endRow - startRow > 10000 && i % 10 !== 0) continue;
+        
         totalRows++;
         
         if (row && row[xColIndex] !== undefined) {
@@ -424,6 +482,10 @@ function updateDataPreview() {
         
         for (let i = startRow - 1; i < endRow && i < currentSheet.data.length; i++) {
             const row = currentSheet.data[i];
+            
+            // Skip processing every few rows if we're dealing with a very large dataset
+            if (endRow - startRow > 10000 && i % 10 !== 0) continue;
+            
             if (row && row[yColIndex] !== undefined) {
                 // Apply filter
                 if (!rowMatchesFilter(row)) continue;
@@ -432,7 +494,7 @@ function updateDataPreview() {
             }
         }
     });
-    
+
     // Display filter information if active
     let filterInfoHTML = '';
     if (useFilter) {
@@ -497,89 +559,12 @@ function updateDataPreview() {
     yAxisPreview.appendChild(yPreviewHTML);
 }
 
-// Generate chart based on user selections
-function generateChart() {
-    if (!currentSheet || !selectedChartType) {
-        alert('Please select a chart type and ensure you have data loaded.');
-        return;
-    }
-    
-    try {
-        const chartData = collectChartData();
-        if (!chartData) return;
-        
-        // Destroy previous chart if exists
-        if (chartInstance) {
-            chartInstance.destroy();
-        }
-        
-        const ctx = document.getElementById('chartCanvas').getContext('2d');
-        
-        // Create chart configuration
-        let chartType = selectedChartType;
-        let processedData = chartData;
-        
-        // Handle special cases
-        if (selectedChartType === 'stackedBar' || selectedChartType === 'percentStackedBar') {
-            chartType = 'bar'; // Chart.js uses 'bar' type with stacked option
-            
-            // For percentage stacked bars, convert data to percentages
-            if (selectedChartType === 'percentStackedBar') {
-                processedData = {
-                    labels: chartData.labels,
-                    datasets: calculatePercentageData(chartData.datasets, chartData.labels)
-                };
-            }
-        }
-        
-        const chartConfig = {
-            type: chartType,
-            data: processedData,
-            options: generateChartOptions(selectedChartType)
-        };
-        
-        // Create chart
-        chartInstance = new Chart(ctx, chartConfig);
-        
-        // Show chart display area
-        document.getElementById('chart-display').classList.remove('hidden');
-        
-        // Set default titles
-        document.getElementById('chartTitle').value = 'Excel Data Chart';
-        document.getElementById('xAxisLabel').value = columns[parseInt(document.getElementById('xAxisSelect').value)].name;
-        document.getElementById('yAxisLabel').value = selectedChartType === 'percentStackedBar' ? 'Percentage (%)' : 'Values';
-    } catch (error) {
-        console.error('Error generating chart:', error);
-        alert('Error generating chart: ' + error.message);
-    }
-}
-
-// Add a new function to calculate percentage data
-function calculatePercentageData(datasets, labels) {
-    // For each label/category, calculate the sum of all dataset values
-    const totals = labels.map((_, labelIndex) => {
-        return datasets.reduce((sum, dataset) => {
-            const value = dataset.data[labelIndex] || 0;
-            return sum + Math.abs(value);  // Use absolute value to handle negative numbers
-        }, 0);
-    });
-    
-    // Convert each dataset value to a percentage of the total
-    return datasets.map(dataset => {
-        const percentData = dataset.data.map((value, index) => {
-            if (totals[index] === 0) return 0;  // Avoid division by zero
-            return (Math.abs(value) / totals[index]) * 100;  // Calculate percentage
-        });
-        
-        return {
-            ...dataset,
-            data: percentData
-        };
-    });
-}
-
 // Collect data for the chart from user selections
 function collectChartData() {
+    if (!validateDataRange()) {
+        return null;
+    }
+    
     const xAxisSelect = document.getElementById('xAxisSelect');
     const yAxisSelects = document.querySelectorAll('.y-axis-select');
     const colorInputs = document.querySelectorAll('.series-color');
@@ -595,6 +580,10 @@ function collectChartData() {
     const filterColumnIndex = useFilter ? parseInt(filterColumnSelect.value) : -1;
     const filterValue = filterValueSelect.value;
     
+    // Get chart filter column
+    const filterColumn2 = document.getElementById('filterColumn2');
+    const chartFilterColumnIndex = filterColumn2.value ? parseInt(filterColumn2.value) : -1;
+    
     // Validate
     if (yAxisSelects.length === 0) {
         alert('At least one Y-axis series is required.');
@@ -603,13 +592,13 @@ function collectChartData() {
     
     const xColIndex = parseInt(xAxisSelect.value);
     
-    // Function to check if a row matches the filter
+    // Function to check if a row matches the filter with improved type handling
     function rowMatchesFilter(row) {
         if (!useFilter || filterValue === '') {
             return true; // No filter applied
         }
         
-        return row[filterColumnIndex] == filterValue; // Use loose equality for number/string comparison
+        return valueMatches(row[filterColumnIndex], filterValue);
     }
     
     // For single-series charts like pie, only use first Y series
@@ -794,10 +783,196 @@ function collectChartData() {
         return null;
     }
     
+    // When collecting chart data, make sure to store the original data rows for filtering
+    if (chartFilterColumnIndex >= 0) {
+        // Store row references for later filtering
+        chartInstance.rowData = filteredRows.map(item => item.row);
+    }
+    
     return {
         labels: labels,
         datasets: datasets
     };
+}
+
+// Generate chart based on user selections
+function generateChart() {
+    if (!currentSheet || !selectedChartType) {
+        alert('Please select a chart type and ensure you have data loaded.');
+        return;
+    }
+    
+    try {
+        // Validate range
+        if (!validateDataRange()) {
+            return;
+        }
+        
+        // Show loading message
+        const loadingMessage = document.createElement('div');
+        loadingMessage.className = 'chart-loading-message';
+        loadingMessage.textContent = 'Processing data, please wait...';
+        document.body.appendChild(loadingMessage);
+        
+        // Use setTimeout to allow the UI to update before heavy processing
+        setTimeout(() => {
+            try {
+                const chartData = collectChartData();
+                if (!chartData) {
+                    document.body.removeChild(loadingMessage);
+                    return;
+                }
+                
+                // Destroy previous chart if exists
+                if (chartInstance) {
+                    chartInstance.destroy();
+                }
+                
+                const ctx = document.getElementById('chartCanvas').getContext('2d');
+                
+                // Create chart configuration
+                let chartType = selectedChartType;
+                let processedData = chartData;
+                
+                // Handle special cases
+                if (selectedChartType === 'stackedBar' || selectedChartType === 'percentStackedBar') {
+                    chartType = 'bar'; // Chart.js uses 'bar' type with stacked option
+                    
+                    // For percentage stacked bars, convert data to percentages
+                    if (selectedChartType === 'percentStackedBar') {
+                        processedData = {
+                            labels: chartData.labels,
+                            datasets: calculatePercentageData(chartData.datasets, chartData.labels)
+                        };
+                    }
+                }
+                
+                const chartConfig = {
+                    type: chartType,
+                    data: processedData,
+                    options: generateChartOptions(selectedChartType)
+                };
+                
+                // Add legend click handler for percentage stacked bar charts
+                if (selectedChartType === 'percentStackedBar') {
+                    // Store original data for recalculation
+                    chartConfig.originalData = JSON.parse(JSON.stringify(chartData));
+                    
+                    // Add legend click handler
+                    const legendClickHandler = {
+                        id: 'legendClickHandler',
+                        beforeInit: function(chart) {
+                            // Save original handler reference
+                            const originalLegendOnClick = chart.options.plugins.legend.onClick;
+                            
+                            // Override default legend click handler
+                            chart.options.plugins.legend.onClick = function(e, legendItem, legend) {
+                                // Call the original handler (toggles visibility)
+                                originalLegendOnClick.call(this, e, legendItem, legend);
+                                
+                                // If it's a percent stacked bar, recalculate percentages
+                                if (selectedChartType === 'percentStackedBar') {
+                                    // Get currently visible datasets
+                                    const visibleDatasets = chart.originalData.datasets.filter((dataset, i) => 
+                                        !chart.getDatasetMeta(i).hidden
+                                    );
+                                    
+                                    // Recalculate percentages based only on visible datasets
+                                    const recalculatedDatasets = calculatePercentageData(
+                                        visibleDatasets, 
+                                        chart.originalData.labels
+                                    );
+                                    
+                                    // Update each visible dataset with new percentages
+                                    let visibleIndex = 0;
+                                    chart.data.datasets.forEach((dataset, i) => {
+                                        if (!chart.getDatasetMeta(i).hidden) {
+                                            dataset.data = recalculatedDatasets[visibleIndex].data;
+                                            visibleIndex++;
+                                        }
+                                    });
+                                    
+                                    chart.update();
+                                }
+                            };
+                        }
+                    };
+                    
+                    // Add the plugin to chart configuration
+                    if (!chartConfig.plugins) chartConfig.plugins = [];
+                    chartConfig.plugins.push(legendClickHandler);
+                }
+                
+                // Create chart
+                chartInstance = new Chart(ctx, chartConfig);
+                
+                // Store original data for percentage recalculation when toggling legend
+                if (selectedChartType === 'percentStackedBar') {
+                    chartInstance.originalData = chartConfig.originalData;
+                }
+                
+                // Store original complete chart data for filtering
+                chartInstance.fullData = JSON.parse(JSON.stringify(chartData));
+                
+                // Populate chart filter dropdown based on the selected filter column
+                populateChartFilterValues();
+                
+                // Make sure the chart filter controls are visible if a chart filter column was selected
+                const filterColumn2 = document.getElementById('filterColumn2');
+                const chartFilterControls = document.querySelector('.chart-filter-controls');
+                
+                if (filterColumn2.value) {
+                    chartFilterControls.style.display = 'flex';
+                } else {
+                    chartFilterControls.style.display = 'none';
+                }
+                
+                // Remove loading message
+                document.body.removeChild(loadingMessage);
+                
+                // Show chart display area
+                document.getElementById('chart-display').classList.remove('hidden');
+                
+                // Set default titles
+                document.getElementById('chartTitle').value = 'Excel Data Chart';
+                document.getElementById('xAxisLabel').value = columns[parseInt(document.getElementById('xAxisSelect').value)].name;
+                document.getElementById('yAxisLabel').value = selectedChartType === 'percentStackedBar' ? 'Percentage (%)' : 'Values';
+            } catch (error) {
+                // Remove loading message
+                document.body.removeChild(loadingMessage);
+                console.error('Error generating chart:', error);
+                alert('Error generating chart: ' + error.message);
+            }
+        }, 50); // Small delay to let the UI update
+        
+    } catch (error) {
+        console.error('Error preparing chart generation:', error);
+        alert('Error preparing chart: ' + error.message);
+    }
+}
+
+// Add a new function to calculate percentage data
+function calculatePercentageData(datasets, labels) {
+    // For each label/category, calculate the sum of all dataset values
+    const totals = labels.map((_, labelIndex) => {
+        return datasets.reduce((sum, dataset) => {
+            const value = dataset.data[labelIndex] || 0;
+            return sum + Math.abs(value);  // Use absolute value to handle negative numbers
+        }, 0);
+    });
+    
+    // Convert each dataset value to a percentage of the total
+    return datasets.map(dataset => {
+        const percentData = dataset.data.map((value, index) => {
+            if (totals[index] === 0) return 0;  // Avoid division by zero
+            return (Math.abs(value) / totals[index]) * 100;  // Calculate percentage
+        });
+        
+        return {
+            ...dataset,
+            data: percentData
+        };
+    });
 }
 
 // Generate chart options based on chart type
@@ -1138,7 +1313,39 @@ function downloadChartCode() {
             });
         }
         
-        // Convert data to percentages
+        // Store original data for recalculation when toggling legend items
+        const originalData = ${JSON.stringify(chartInstance.originalData || chartData, null, 2)};
+        
+        // Override legend click handler to recalculate percentages
+        const originalLegendOnClick = Chart.defaults.plugins.legend.onClick;
+        Chart.defaults.plugins.legend.onClick = function(e, legendItem, legend) {
+            // Call the original handler (toggles visibility)
+            originalLegendOnClick.call(this, e, legendItem, legend);
+            
+            // Get currently visible datasets
+            const visibleDatasets = originalData.datasets.filter((dataset, i) => 
+                !chart.getDatasetMeta(i).hidden
+            );
+            
+            // Recalculate percentages based only on visible datasets
+            const recalculatedDatasets = calculatePercentageData(
+                visibleDatasets, 
+                originalData.labels
+            );
+            
+            // Update each visible dataset with new percentages
+            let visibleIndex = 0;
+            chart.data.datasets.forEach((dataset, i) => {
+                if (!chart.getDatasetMeta(i).hidden) {
+                    dataset.data = recalculatedDatasets[visibleIndex].data;
+                    visibleIndex++;
+                }
+            });
+            
+            chart.update();
+        };
+        
+        // Convert data to percentages initially
         data.datasets = calculatePercentageData(data.datasets, data.labels);`;
         }
     }
@@ -1210,4 +1417,435 @@ function downloadChartCode() {
     
     // Clean up
     URL.revokeObjectURL(url);
+}
+
+// Populate chart filter dropdown based on selected column
+function populateChartFilterValues() {
+    const filterColumn2 = document.getElementById('filterColumn2');
+    const chartFilterValue = document.getElementById('chartFilterValue');
+    const chartFilterLabel = document.getElementById('chartFilterLabel');
+    
+    // Clear existing options
+    chartFilterValue.innerHTML = '';
+    
+    // Add "All Values" option
+    const allOption = document.createElement('option');
+    allOption.value = "";
+    allOption.textContent = "All Values";
+    chartFilterValue.appendChild(allOption);
+    
+    if (!filterColumn2.value) {
+        // No filter column selected
+        chartFilterValue.disabled = true;
+        document.querySelector('.chart-filter-controls').style.display = 'none';
+        return;
+    }
+    
+    // Show the chart filter controls
+    document.querySelector('.chart-filter-controls').style.display = 'flex';
+    
+    // Enable the filter value dropdown
+    chartFilterValue.disabled = false;
+    
+    // Get the selected column index
+    const columnIndex = parseInt(filterColumn2.value);
+    const columnName = columns[columnIndex].name;
+    
+    // Update the label
+    chartFilterLabel.textContent = `Filter by ${columnName}:`;
+    
+    // Use a Map to preserve the original data types
+    const uniqueValuesMap = new Map();
+    const startRow = parseInt(document.getElementById('startRow').value);
+    const endRow = parseInt(document.getElementById('endRow').value);
+    
+    // Apply main filter (if any)
+    const filterColumnSelect = document.getElementById('filterColumn');
+    const filterValueSelect = document.getElementById('filterValue');
+    const useFilter = filterColumnSelect.value !== '';
+    const filterColumnIndex = useFilter ? parseInt(filterColumnSelect.value) : -1;
+    const filterValue = filterValueSelect.value;
+    
+    // Function to check if a row matches the main filter
+    function rowMatchesMainFilter(row) {
+        if (!useFilter || filterValue === '') {
+            return true; // No filter applied
+        }
+        return valueMatches(row[filterColumnIndex], filterValue);
+    }
+    
+    // Get values from current chart data first - this ensures we only show values that are actually in the chart
+    if (chartInstance && chartInstance.fullData) {
+        // For bar/line/radar charts
+        if (chartInstance.fullData.labels && chartInstance.fullData.datasets) {
+            // Find all rows that match our current chart data
+            for (let i = startRow - 1; i < endRow && i < currentSheet.data.length; i++) {
+                const row = currentSheet.data[i];
+                if (!row) continue;
+                
+                const xColIndex = parseInt(document.getElementById('xAxisSelect').value);
+                const rowXValue = row[xColIndex];
+                
+                // Check if this row's X value is in our chart labels
+                if (chartInstance.fullData.labels.includes(rowXValue)) {
+                    // Apply main filter
+                    if (!rowMatchesMainFilter(row)) continue;
+                    
+                    if (row[columnIndex] !== undefined) {
+                        // Use the value itself as key to preserve type
+                        const value = row[columnIndex];
+                        uniqueValuesMap.set(String(value), value);
+                    }
+                }
+            }
+        }
+        // For scatter/bubble charts
+        else if (chartInstance.fullData.datasets) {
+            // Each point has x,y coordinates
+            const points = [];
+            chartInstance.fullData.datasets.forEach(dataset => {
+                dataset.data.forEach(point => {
+                    points.push(point);
+                });
+            });
+            
+            // Find matching rows
+            for (let i = startRow - 1; i < endRow && i < currentSheet.data.length; i++) {
+                const row = currentSheet.data[i];
+                if (!row) continue;
+                
+                const xColIndex = parseInt(document.getElementById('xAxisSelect').value);
+                const rowX = parseFloat(row[xColIndex]) || 0;
+                
+                // Check all Y axis columns
+                const yAxisSelects = document.querySelectorAll('.y-axis-select');
+                const yColIndices = Array.from(yAxisSelects).map(select => parseInt(select.value));
+                
+                let matchFound = false;
+                for (const yColIndex of yColIndices) {
+                    const rowY = parseFloat(row[yColIndex]) || 0;
+                    
+                    // Check if this point exists in our chart data
+                    for (const point of points) {
+                        const epsilon = 0.0001;
+                        if (Math.abs(point.x - rowX) < epsilon && Math.abs(point.y - rowY) < epsilon) {
+                            matchFound = true;
+                            break;
+                        }
+                    }
+                    
+                    if (matchFound) break;
+                }
+                
+                if (matchFound) {
+                    // Apply main filter
+                    if (!rowMatchesMainFilter(row)) continue;
+                    
+                    if (row[columnIndex] !== undefined) {
+                        // Use the value itself as key to preserve type
+                        const value = row[columnIndex];
+                        uniqueValuesMap.set(String(value), value);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Sort the unique values (strings alphabetically, numbers numerically)
+    const uniqueValues = Array.from(uniqueValuesMap.values());
+    
+    const sortedValues = uniqueValues.sort((a, b) => {
+        if (typeof a === 'number' && typeof b === 'number') {
+            return a - b;
+        }
+        return String(a).localeCompare(String(b));
+    });
+    
+    // Add options for each unique value
+    sortedValues.forEach(value => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        chartFilterValue.appendChild(option);
+    });
+    
+    console.log(`Chart filter populated with ${sortedValues.length} unique values`);
+}
+
+// Update chart with new filter value
+function updateChartWithFilter() {
+    if (!chartInstance || !chartInstance.fullData) return;
+    
+    const chartFilterValue = document.getElementById('chartFilterValue');
+    const filterColumn2 = document.getElementById('filterColumn2');
+    
+    if (!filterColumn2.value) return;
+    
+    const columnIndex = parseInt(filterColumn2.value);
+    const filterValue = chartFilterValue.value;
+    
+    console.log(`Applying chart filter: Column index ${columnIndex}, Value: "${filterValue}"`);
+    
+    // Deep clone the full data
+    const fullData = JSON.parse(JSON.stringify(chartInstance.fullData));
+    
+    if (filterValue === '') {
+        // No filter, use full data
+        console.log('Using full dataset (no filter)');
+        updateChartWithData(fullData);
+        return;
+    }
+    
+    try {
+        // For pie/doughnut/polarArea charts (single series)
+        if (selectedChartType === 'pie' || selectedChartType === 'doughnut' || selectedChartType === 'polarArea') {
+            const filteredLabels = [];
+            const filteredData = [];
+            const backgroundColor = [];
+            
+            // Match original data indexes with filter value
+            for (let i = 0; i < fullData.labels.length; i++) {
+                const label = fullData.labels[i];
+                
+                // Get all rows that match this label
+                const matchingRows = findAllRowsByLabel(label, columnIndex);
+                let matchesFilter = matchingRows.some(row => 
+                    valueMatches(row[columnIndex], filterValue)
+                );
+                
+                if (matchesFilter) {
+                    filteredLabels.push(label);
+                    filteredData.push(fullData.datasets[0].data[i]);
+                    backgroundColor.push(fullData.datasets[0].backgroundColor[i]);
+                }
+            }
+            
+            // Make sure we have data to display
+            if (filteredLabels.length === 0) {
+                alert('No data matches your filter criteria.');
+                return;
+            }
+            
+            // Update chart with filtered data
+            chartInstance.data.labels = filteredLabels;
+            chartInstance.data.datasets[0].data = filteredData;
+            chartInstance.data.datasets[0].backgroundColor = backgroundColor;
+        }
+        // For scatter/bubble charts
+        else if (selectedChartType === 'scatter' || selectedChartType === 'bubble') {
+            let hasData = false;
+            
+            chartInstance.data.datasets.forEach((dataset, datasetIndex) => {
+                const filteredData = [];
+                
+                // Filter points based on the selected value
+                for (let pointIndex = 0; pointIndex < fullData.datasets[datasetIndex].data.length; pointIndex++) {
+                    const point = fullData.datasets[datasetIndex].data[pointIndex];
+                    
+                    // Find all rows that match these coordinates
+                    const matchingRows = findAllRowsByCoordinates(point.x, point.y, columnIndex);
+                    let matchesFilter = matchingRows.some(row => 
+                        valueMatches(row[columnIndex], filterValue)
+                    );
+                    
+                    if (matchesFilter) {
+                        filteredData.push(point);
+                        hasData = true;
+                    }
+                }
+                
+                // Update this dataset
+                dataset.data = filteredData;
+            });
+            
+            if (!hasData) {
+                alert('No data matches your filter criteria.');
+                return;
+            }
+        }
+        // For other chart types (bar, line, radar, etc.)
+        else {
+            const filteredLabels = [];
+            const filteredDatasets = fullData.datasets.map(dataset => ({
+                ...dataset,
+                data: []
+            }));
+            
+            // For each label, check if any matching row has the filter value
+            for (let labelIndex = 0; labelIndex < fullData.labels.length; labelIndex++) {
+                const label = fullData.labels[labelIndex];
+                
+                // Find all rows that have this label
+                const matchingRows = findAllRowsByLabel(label, columnIndex);
+                
+                // Check if any rows match the filter value
+                const matchesFilter = matchingRows.some(row => 
+                    valueMatches(row[columnIndex], filterValue)
+                );
+                
+                if (matchesFilter) {
+                    filteredLabels.push(label);
+                    
+                    // For each dataset, add the corresponding data point
+                    fullData.datasets.forEach((dataset, datasetIndex) => {
+                        filteredDatasets[datasetIndex].data.push(dataset.data[labelIndex]);
+                    });
+                }
+            }
+            
+            // Make sure we have data to display
+            if (filteredLabels.length === 0) {
+                alert('No data matches your filter criteria.');
+                return;
+            }
+            
+            // Update chart data
+            chartInstance.data.labels = filteredLabels;
+            chartInstance.data.datasets.forEach((dataset, i) => {
+                dataset.data = filteredDatasets[i].data;
+            });
+        }
+        
+        // Special cases for different chart types
+        if (selectedChartType === 'percentStackedBar' && chartInstance.data.labels.length > 0) {
+            // For percentage stacked bars, recalculate percentages
+            const recalculatedDatasets = calculatePercentageData(
+                chartInstance.data.datasets, 
+                chartInstance.data.labels
+            );
+            
+            chartInstance.data.datasets.forEach((dataset, i) => {
+                dataset.data = recalculatedDatasets[i].data;
+            });
+        }
+        
+        // Update the chart
+        chartInstance.update();
+        console.log('Chart updated with filtered data');
+        
+    } catch (error) {
+        console.error('Error filtering chart:', error);
+        alert('Error applying filter. Please try again with different criteria.');
+    }
+}
+
+// Helper function to find all rows with a specific label
+function findAllRowsByLabel(labelValue, filterColumnIndex) {
+    const xAxisSelect = document.getElementById('xAxisSelect');
+    const xColIndex = parseInt(xAxisSelect.value);
+    
+    const startRow = parseInt(document.getElementById('startRow').value);
+    const endRow = parseInt(document.getElementById('endRow').value);
+    
+    // Get filter settings (for the first filter)
+    const filterColumnSelect = document.getElementById('filterColumn');
+    const filterValueSelect = document.getElementById('filterValue');
+    const useFilter = filterColumnSelect.value !== '';
+    const mainFilterColumnIndex = useFilter ? parseInt(filterColumnSelect.value) : -1;
+    const mainFilterValue = filterValueSelect.value;
+    
+    const matchingRows = [];
+    
+    // Optimize for large datasets
+    const checkEveryNthRow = endRow - startRow > 10000 ? 2 : 1;
+    
+    for (let i = startRow - 1; i < endRow && i < currentSheet.data.length; i += checkEveryNthRow) {
+        const row = currentSheet.data[i];
+        if (!row) continue;
+        
+        // Check if the X value matches our label
+        if (valueMatches(row[xColIndex], labelValue)) {
+            // Apply main filter if present
+            if (useFilter && mainFilterValue !== '') {
+                if (!valueMatches(row[mainFilterColumnIndex], mainFilterValue)) {
+                    continue;
+                }
+            }
+            
+            matchingRows.push(row);
+        }
+    }
+    
+    return matchingRows;
+}
+
+// Helper function to find rows by x,y coordinates (for scatter/bubble charts)
+function findAllRowsByCoordinates(x, y, filterColumnIndex) {
+    const xAxisSelect = document.getElementById('xAxisSelect');
+    const yAxisSelects = document.querySelectorAll('.y-axis-select');
+    
+    const xColIndex = parseInt(xAxisSelect.value);
+    const yColIndices = Array.from(yAxisSelects).map(select => parseInt(select.value));
+    
+    const startRow = parseInt(document.getElementById('startRow').value);
+    const endRow = parseInt(document.getElementById('endRow').value);
+    
+    // Get filter settings (for the first filter)
+    const filterColumnSelect = document.getElementById('filterColumn');
+    const filterValueSelect = document.getElementById('filterValue');
+    const useFilter = filterColumnSelect.value !== '';
+    const mainFilterColumnIndex = useFilter ? parseInt(filterColumnSelect.value) : -1;
+    const mainFilterValue = filterValueSelect.value;
+    
+    const matchingRows = [];
+    
+    // Optimize for large datasets
+    const checkEveryNthRow = endRow - startRow > 10000 ? 5 : 1;
+    
+    for (let i = startRow - 1; i < endRow && i < currentSheet.data.length; i += checkEveryNthRow) {
+        const row = currentSheet.data[i];
+        if (!row) continue;
+        
+        const rowX = parseFloat(row[xColIndex]) || 0;
+        
+        for (const yColIndex of yColIndices) {
+            const rowY = parseFloat(row[yColIndex]) || 0;
+            
+            // Compare with a small epsilon for floating point comparison
+            const epsilon = 0.0001;
+            if (Math.abs(rowX - x) < epsilon && Math.abs(rowY - y) < epsilon) {
+                // Apply main filter if present
+                if (useFilter && mainFilterValue !== '') {
+                    if (!valueMatches(row[mainFilterColumnIndex], mainFilterValue)) {
+                        continue;
+                    }
+                }
+                
+                matchingRows.push(row);
+                break; // No need to check other y columns for this row
+            }
+        }
+    }
+    
+    return matchingRows;
+}
+
+// Update chart with new data (for filtering)
+function updateChartWithData(newData) {
+    if (!chartInstance) return;
+    
+    // For percentage stacked bar chart, need to recalculate percentages
+    if (selectedChartType === 'percentStackedBar') {
+        const processedData = {
+            labels: newData.labels,
+            datasets: calculatePercentageData(newData.datasets, newData.labels)
+        };
+        
+        chartInstance.data.labels = processedData.labels;
+        chartInstance.data.datasets.forEach((dataset, i) => {
+            if (i < processedData.datasets.length) {
+                dataset.data = processedData.datasets[i].data;
+            }
+        });
+    } else {
+        // For other chart types
+        chartInstance.data.labels = newData.labels;
+        chartInstance.data.datasets.forEach((dataset, i) => {
+            if (i < newData.datasets.length) {
+                dataset.data = newData.datasets[i].data;
+            }
+        });
+    }
+    
+    chartInstance.update();
 }

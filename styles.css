@@ -406,6 +406,109 @@ header h1 {
     margin-bottom: 10px;
 }
 
+/* Chart Filter Controls */
+.chart-filter-controls {
+    display: flex;
+    justify-content: flex-start;
+    padding: 10px 0;
+    margin-bottom: 15px;
+    background-color: #f0f4f8;
+    border-radius: 8px;
+    padding: 10px 15px;
+}
+
+.chart-filter-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background-color: #f8f9fa;
+    padding: 10px 15px;
+    border-radius: 6px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+    border-left: 4px solid #4e73df;
+}
+
+.chart-filter-group label {
+    font-weight: bold;
+    color: #2c3e50;
+    min-width: 120px;
+}
+
+#chartFilterValue {
+    padding: 8px 12px;
+    border: 1px solid #4e73df;
+    border-radius: 4px;
+    min-width: 250px;
+    font-size: 15px;
+    cursor: pointer;
+    background-color: white;
+    transition: all 0.2s;
+}
+
+#chartFilterValue:hover,
+#chartFilterValue:focus {
+    border-color: #2e59d9;
+    box-shadow: 0 0 0 2px rgba(78, 115, 223, 0.25);
+    outline: none;
+}
+
+/* Chart Loading Message */
+.chart-loading-message {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(33, 37, 41, 0.8);
+    color: white;
+    padding: 15px 30px;
+    border-radius: 30px;
+    font-weight: bold;
+    z-index: 1000;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* Input validation styles */
+input:invalid {
+    border-color: #e74a3b !important;
+    background-color: #fff8f8;
+}
+
+/* Improved data range controls */
+.range-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    align-items: center;
+}
+
+.range-group {
+    display: flex;
+    align-items: center;
+}
+
+.range-group label {
+    margin-right: 8px;
+    font-weight: 600;
+}
+
+.range-group input {
+    width: 80px;
+    padding: 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+}
+
+/* Responsive adjustments for chart filter */
+@media (max-width: 768px) {
+    .chart-filter-controls {
+        flex-direction: column;
+    }
+
+    .chart-filter-group {
+        width: 100%;
+    }
+}
+
 /* Button Styles */
 .primary-btn, .action-btn, .secondary-btn {
     padding: 10px 20px;
